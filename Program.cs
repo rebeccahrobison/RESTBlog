@@ -105,6 +105,38 @@ app.MapPost("/blogs", (Blog blog) =>
     });
 });
 
+app.MapPost("/blogs/{id}", (int id) =>
+{
+    Blog blog = blogs.FirstOrDefault(b => b.Id == id);
+    if (blog == null)
+    {
+        return Results.NotFound();
+    }
+    List<Article> foundArticles = articles.Where(a => a.BlogId == blog.Id).ToList();
+    List<BlogAuthor> foundBlogAuthors = blogAuthors.Where(ba => ba.BlogId == id).ToList();
+    List<Author> foundAuthors = foundBlogAuthors
+        .Select(ba => authors.FirstOrDefault(a => a.Id == ba.AuthorId))
+        .Where(a => a != null)
+        .ToList();
+
+    return Results.Ok(new BlogDTO
+    {
+        Id = blog.Id,
+        Title = blog.Title,
+        Articles = foundArticles.Select(fa => new ArticleDTO
+        {
+            Id = fa.Id,
+            Title = fa.Title,
+            BlogId = id
+        }).ToList(),
+        Authors = foundAuthors.Select(fa => new AuthorDTO
+        {
+            Id = fa.Id,
+            Name = fa.Name
+        }).ToList()
+    });
+});
+
 //Retrieve the articles for a blog
 app.MapGet("/blogs/{id}/articles", (int id) =>
 {
@@ -124,6 +156,18 @@ app.MapGet("/blogs/{id}/articles", (int id) =>
     }).ToList();
     
     return Results.Ok(articleDTOs);
+});
+
+
+app.MapGet("/articles", () =>
+{
+    return articles.Select(a => new ArticleDTO
+    {
+        Id = a.Id,
+        Title = a.Title,
+        BlogId = a.BlogId,
+        PostedOnDate = a.PostedOnDate
+    });
 });
 
 //Create a comment on a specific article
@@ -248,16 +292,85 @@ app.MapDelete("blogs/{id}/articles", (int id) =>
 });
 
 //Retrieve recently posted articles
+app.MapGet("/articles/recent", () =>
+{
+    DateTime threeMonthsAgo = DateTime.Today.AddMonths(-3); 
+    List<Article> recentArticles = articles.Where(a => a.PostedOnDate >= threeMonthsAgo).ToList();
 
+    return recentArticles.Select(ra => new ArticleDTO
+    {
+        Id = ra.Id,
+        Title = ra.Title,
+        BlogId = ra.BlogId,
+        PostedOnDate = ra.PostedOnDate
+    });
+});
 
 //Add an Author to a Blog
+app.MapPost("/blogauthor", (BlogAuthor blogAuthor) =>
+{
+    blogAuthor.Id = blogAuthors.Max(ba => ba.Id) + 1;
+    Blog blog = blogs.FirstOrDefault(b => b.Id == blogAuthor.BlogId);
+    Author author = authors.FirstOrDefault(a => a.Id == blogAuthor.AuthorId);
+    if (blog == null || author == null)
+    {
+        return Results.BadRequest();
+    }
 
+    blogAuthors.Add(blogAuthor);
+
+    return Results.Created($"/blogauthor/{blogAuthor.Id}", new BlogAuthorDTO
+    {
+        Id = blogAuthor.Id,
+        BlogId = blogAuthor.BlogId,
+        AuthorId = blogAuthor.AuthorId
+    });
+});
 
 //Update all articles in a blog
+app.MapPut("blogs/{id}/updatearticles", (int id, List<Article> articlesToUpdate) =>
+{
+    Blog blog = blogs.FirstOrDefault(b => b.Id == id);
+    if (blog == null)
+    {
+        return Results.NotFound();
+    }
+    List<Article> blogsArticles = articles.Where(a => a.BlogId == id).ToList();
+    foreach (Article atu in articlesToUpdate)
+    {
+        
+        Article existingArticle = blogsArticles.FirstOrDefault(a => a.Id == atu.Id);
 
+        if (existingArticle != null)
+        {
+            existingArticle.Title = atu.Title;
+            existingArticle.PostedOnDate = atu.PostedOnDate;
+            existingArticle.Comments = atu.Comments;
+        }
+    }
+    return Results.NoContent();
+});
 
 //Get all comments on articles on a blog
+app.MapGet("/blogs/{id}/comments", (int id) =>
+{
+    //make a list of all comments
+    Blog blog = blogs.FirstOrDefault(b => b.Id == id);
+    if (blog == null)
+    {
+        return Results.NotFound();
+    }
 
+    List<Comment> foundComments = comments.Where(c => c.BlogId == id).ToList();
+
+    return Results.Ok(foundComments.Select(fc => new CommentDTO
+    {
+        Id = fc.Id,
+        BlogId = fc.BlogId,
+        ArticleId = fc.ArticleId,
+        AuthorId = fc.AuthorId
+    }));
+});
 
 
 app.Run();
